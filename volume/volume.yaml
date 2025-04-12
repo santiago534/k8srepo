@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: institucional-web-pv
+spec:
+  storageClassName: clase-institucional
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadOnlyMany
+  hostPath:
+    path: /mnt/sitio-web
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: institucional-web-pvc
+spec:
+  storageClassName: clase-institucional
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi
