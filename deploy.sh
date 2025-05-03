@@ -17,7 +17,8 @@ for cmd in git kubectl minikube docker; do
   fi
 done
 # === CONFIGURACIÓN DE VARIABLES ===
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 MOUNT_DIR="./sitio-web"
 MANIFIESTOS_DIR="./k8srepo"
 
