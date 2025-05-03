@@ -1,191 +1,190 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
 # =============================================================================
-# Script de despliegue automático en Kubernetes usando Minikube
-# Despliega una web estática montada desde el host como volumen persistente.
-# Autor: Santiago Galdos
-# Fecha: 2025-05
+# Despliegue automático en Minikube de un sitio web estático con Kubernetes
+# Autor: Santiago Galdos - Mayo 2025
 # =============================================================================
 
-# === VALIDACIÓN DE DEPENDENCIAS ===
-for cmd in git kubectl minikube docker; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo -e "\n❌ Error: La herramienta '$cmd' no está instalada o no está en el PATH.\n"
+# === VERIFICACIÓN DE HERRAMIENTAS REQUERIDAS ===
+for herramienta in git kubectl minikube docker; do
+  if ! command -v "$herramienta" >/dev/null 2>&1; then
+    echo -e "\n❌ No se encontró la herramienta '$herramienta' en el sistema. Verificá que esté instalada y accesible desde el PATH.\n"
     exit 1
   fi
 done
-# === CONFIGURACIÓN DE VARIABLES ===
-SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-MOUNT_DIR="./sitio-web"
-MANIFIESTOS_DIR="./k8srepo"
 
-REPO_SITIO="https://github.com/santiago534/static-website.git"
-REPO_MANIFIESTOS="https://github.com/santiago534/k8srepo.git"
+# === CONFIGURACIÓN INICIAL ===
+RUTA_SCRIPT="${BASH_SOURCE[0]:-$0}"
+CARPETA_BASE="$(cd "$(dirname "$RUTA_SCRIPT")" && pwd)"
+CARPETA_SITIO="./sitio-web"
+CARPETA_K8S="./k8srepo"
 
-PROFILE="sitio-web-profile"
-NAMESPACE="sitio-web-ns"
-CONTEXT="sitio-web-context"
+REPO_WEB="https://github.com/santiago534/static-website.git"
+REPO_K8S="https://github.com/santiago534/k8srepo.git"
 
-DEPLOYMENT_NAME="institucional-web"
-SERVICE_NAME="institucional-web-svc"
+PERFIL_MINIKUBE="sitio-web-profile"
+NS_K8S="sitio-web-ns"
+CTX_K8S="sitio-web-context"
+
+DEPLOYMENT_WEB="institucional-web"
+SERVICIO_WEB="institucional-web-svc"
 
 # =============================================================================
-# CLONAR Y VERIFICAR REPOSITORIOS
+# DESCARGA Y VALIDACIÓN DE ARCHIVOS
 # =============================================================================
 
-echo -e "\n Preparando entorno de archivos..."
+echo -e "\n🔍 Preparando el entorno de trabajo..."
 
-# Clonar sitio web
-if [ ! -d "$MOUNT_DIR" ]; then
-  echo " Clonando repositorio de sitio web..."
-  git clone "$REPO_SITIO" "./static-website"
-  mv "./static-website" "$MOUNT_DIR"
-  echo " Carpeta renombrada de 'static-website' a 'sitio-web'"
+# Clonado del repositorio del sitio web
+if [ ! -d "$CARPETA_SITIO" ]; then
+  echo "📥 Descargando el sitio web..."
+  git clone "$REPO_WEB" "./static-website"
+  mv "./static-website" "$CARPETA_SITIO"
+  echo "📁 Se renombró la carpeta a 'sitio-web'"
 else
-  echo " Sitio web ya clonado en $MOUNT_DIR"
+  echo "📁 El sitio web ya fue descargado anteriormente en '$CARPETA_SITIO'"
 fi
 
-# Verificar archivos esenciales
-if [[ ! -f "$MOUNT_DIR/index.html" || ! -f "$MOUNT_DIR/style.css" ]]; then
-  echo " Error: Faltan archivos esenciales (index.html o style.css) en el sitio web."
+# Verificación de archivos esenciales
+if [[ ! -f "$CARPETA_SITIO/index.html" || ! -f "$CARPETA_SITIO/style.css" ]]; then
+  echo "⚠️ No se encuentran los archivos requeridos: index.html y/o style.css"
   exit 1
 fi
 
-# Clonar manifiestos
-if [ ! -d "$MANIFIESTOS_DIR" ]; then
-  echo " Clonando manifiestos Kubernetes..."
-  git clone "$REPO_MANIFIESTOS" "$MANIFIESTOS_DIR"
+# Clonado del repositorio de manifiestos Kubernetes
+if [ ! -d "$CARPETA_K8S" ]; then
+  echo "📥 Clonando los manifiestos de Kubernetes..."
+  git clone "$REPO_K8S" "$CARPETA_K8S"
 else
-  echo " Manifiestos ya clonados en $MANIFIESTOS_DIR"
+  echo "📁 Los manifiestos ya están disponibles en '$CARPETA_K8S'"
 fi
 
-# Verificar archivos críticos
-for file in "$MANIFIESTOS_DIR/volume/volume.yaml" "$MANIFIESTOS_DIR/deployment/deployment.yaml" "$MANIFIESTOS_DIR/services/service.yaml"; do
-  if [ ! -f "$file" ]; then
-    echo " Error: No se encontró el archivo requerido: $file"
+# Comprobación de archivos clave
+for archivo in "$CARPETA_K8S/volume/volume.yaml" "$CARPETA_K8S/deployment/deployment.yaml" "$CARPETA_K8S/services/service.yaml"; do
+  if [ ! -f "$archivo" ]; then
+    echo "❌ No se pudo encontrar el archivo necesario: $archivo"
     exit 1
   fi
 done
 
-
 # =============================================================================
-# INICIAR MINIKUBE CON PERFIL DEDICADO Y MONTAJE
+# INICIO DEL ENTORNO MINIKUBE
 # =============================================================================
 
-echo -e "\n🚀 Iniciando entorno Minikube (perfil: $PROFILE)..."
+echo -e "\n🚀 Configurando entorno Minikube con perfil '$PERFIL_MINIKUBE'..."
 
-if minikube status -p "$PROFILE" | grep -q "host: Running"; then
-  echo "⚙️  Minikube ya está corriendo en perfil '$PROFILE'. Verificando montaje..."
-  MOUNTED_CONTENT=$(minikube -p "$PROFILE" ssh -- ls -A /mnt/sitio-web 2>/dev/null || true)
-  if [ -z "$MOUNTED_CONTENT" ]; then
-    echo "⚠️  Montaje vacío. Reiniciando perfil '$PROFILE' con montaje..."
-    minikube delete -p "$PROFILE"
-    minikube start -p "$PROFILE" --driver=docker --mount --mount-string="$MOUNT_DIR:/mnt/sitio-web"
+if minikube status -p "$PERFIL_MINIKUBE" | grep -q "host: Running"; then
+  echo "ℹ️ Minikube ya se encuentra activo. Validando si el montaje fue correcto..."
+  CONTENIDO_MONTADO=$(minikube -p "$PERFIL_MINIKUBE" ssh -- ls -A /mnt/sitio-web 2>/dev/null || true)
+  if [ -z "$CONTENIDO_MONTADO" ]; then
+    echo "🔄 El volumen está vacío. Se reiniciará Minikube con el montaje adecuado..."
+    minikube delete -p "$PERFIL_MINIKUBE"
+    minikube start -p "$PERFIL_MINIKUBE" --driver=docker --mount --mount-string="$CARPETA_SITIO:/mnt/sitio-web"
   else
-    echo "✅ Montaje correcto en /mnt/sitio-web"
+    echo "✅ El montaje fue detectado correctamente en '/mnt/sitio-web'"
   fi
 else
-  echo "🚀 Iniciando Minikube con perfil '$PROFILE'..."
-  minikube start -p "$PROFILE" --driver=docker --mount --mount-string="$MOUNT_DIR:/mnt/sitio-web"
+  echo "🟢 Iniciando Minikube con el perfil especificado..."
+  minikube start -p "$PERFIL_MINIKUBE" --driver=docker --mount --mount-string="$CARPETA_SITIO:/mnt/sitio-web"
 fi
 
 # =============================================================================
-# CONTEXTO Y NAMESPACE DEDICADO
+# CONTEXTO Y ESPACIO DE NOMBRES
 # =============================================================================
 
-echo -e "\n🔧 Configurando contexto y namespace..."
+echo -e "\n⚙️ Configurando el contexto de Kubernetes..."
 
-kubectl config set-context "$CONTEXT" --cluster="$PROFILE" --user="$PROFILE" --namespace="$NAMESPACE" >/dev/null 2>&1 || true
-kubectl config use-context "$CONTEXT" >/dev/null 2>&1
+kubectl config set-context "$CTX_K8S" --cluster="$PERFIL_MINIKUBE" --user="$PERFIL_MINIKUBE" --namespace="$NS_K8S" >/dev/null 2>&1 || true
+kubectl config use-context "$CTX_K8S" >/dev/null 2>&1
 
-kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$NAMESPACE"
+kubectl get namespace "$NS_K8S" >/dev/null 2>&1 || kubectl create namespace "$NS_K8S"
 
 # =============================================================================
-# HABILITAR ADDONS NECESARIOS
+# ACTIVACIÓN DE ADDONS
 # =============================================================================
 
-echo -e "\n⚙️  Activando addons necesarios..."
+echo -e "\n🧩 Verificando y activando addons necesarios..."
 
 for addon in storage-provisioner default-storageclass metrics-server; do
-  echo -e "\n➡️  Revisando addon: $addon..."
-  if minikube addons list -p "$PROFILE" | grep -E "^$addon\s+enabled" >/dev/null; then
+  echo -e "\n🔎 Comprobando el addon: $addon"
+  if minikube addons list -p "$PERFIL_MINIKUBE" | grep -E "^$addon\s+enabled" >/dev/null; then
     echo "✅ El addon '$addon' ya está activo."
   else
-    echo "🔄 Activando addon '$addon'..."
-    minikube addons enable "$addon" -p "$PROFILE" >/dev/null 2>&1 && echo "✅ Habilitado"
+    echo "➕ Habilitando '$addon'..."
+    minikube addons enable "$addon" -p "$PERFIL_MINIKUBE" >/dev/null 2>&1 && echo "✅ Activado con éxito."
   fi
 done
 
 # =============================================================================
-# APLICAR MANIFIESTOS DE KUBERNETES
+# DESPLIEGUE DE MANIFIESTOS
 # =============================================================================
 
-echo -e "\n📦 Aplicando manifiestos..."
+echo -e "\n📦 Desplegando los componentes de Kubernetes..."
 
 if ! kubectl get pvc institucional-web-pvc >/dev/null 2>&1; then
-  kubectl apply -f "$MANIFIESTOS_DIR/volume/volume.yaml"
+  kubectl apply -f "$CARPETA_K8S/volume/volume.yaml"
 else
-  echo "ℹ️  PVC ya existe. Se omite."
+  echo "📄 El PVC ya existe. No se vuelve a crear."
 fi
 
-if ! kubectl get deployment "$DEPLOYMENT_NAME" >/dev/null 2>&1; then
-  kubectl apply -f "$MANIFIESTOS_DIR/deployment/deployment.yaml"
+if ! kubectl get deployment "$DEPLOYMENT_WEB" >/dev/null 2>&1; then
+  kubectl apply -f "$CARPETA_K8S/deployment/deployment.yaml"
 else
-  echo "ℹ️  Deployment ya existe. Se omite."
+  echo "📄 El Deployment ya está presente."
 fi
 
-if ! kubectl get service "$SERVICE_NAME" >/dev/null 2>&1; then
-  kubectl apply -f "$MANIFIESTOS_DIR/services/service.yaml"
+if ! kubectl get service "$SERVICIO_WEB" >/dev/null 2>&1; then
+  kubectl apply -f "$CARPETA_K8S/services/service.yaml"
 else
-  echo "ℹ️  Service ya existe. Se omite."
+  echo "📄 El Service ya fue creado previamente."
 fi
 
 # =============================================================================
-# ESPERAR A QUE LOS PODS ESTÉN LISTOS
+# ESPERA ACTIVA HASTA QUE LOS PODS ESTÉN LISTOS
 # =============================================================================
 
-echo -e "\n⏳ Esperando que los pods estén en estado Running..."
+echo -e "\n⏳ Esperando que los pods estén completamente operativos..."
 
-until kubectl get deployment "$DEPLOYMENT_NAME" >/dev/null 2>&1; do
-  echo "⏳ Esperando creación del deployment..."
+until kubectl get deployment "$DEPLOYMENT_WEB" >/dev/null 2>&1; do
+  echo "⌛ Aguardando que se cree el deployment..."
   sleep 2
 done
 
-until kubectl get pods | grep "$DEPLOYMENT_NAME" >/dev/null 2>&1; do
-  echo "⏳ Esperando creación de pods..."
+until kubectl get pods | grep "$DEPLOYMENT_WEB" >/dev/null 2>&1; do
+  echo "⌛ Aguardando que aparezcan los pods..."
   sleep 2
 done
 
-EXPECTED_READY=$(kubectl get deployment "$DEPLOYMENT_NAME" -o jsonpath="{.spec.replicas}")
-echo "⏳ Esperando que $EXPECTED_READY pod(s) estén en estado Running..."
+PODS_ESPERADOS=$(kubectl get deployment "$DEPLOYMENT_WEB" -o jsonpath="{.spec.replicas}")
+echo "⌛ Se esperan $PODS_ESPERADOS pod(s) en estado Running..."
 
-until [ "$(kubectl get pods | grep "$DEPLOYMENT_NAME" | grep -c '1/1')" -eq "$EXPECTED_READY" ]; do
+until [ "$(kubectl get pods | grep "$DEPLOYMENT_WEB" | grep -c '1/1')" -eq "$PODS_ESPERADOS" ]; do
   echo -n "."
   sleep 2
 done
 
-echo -e "\n✅ Todos los pods están ahora en estado Running."
+echo -e "\n✅ Todos los pods están ahora en ejecución."
 
 # =============================================================================
-# ESTADO FINAL Y ACCESO
+# RESUMEN FINAL Y ACCESO
 # =============================================================================
 
-echo -e "\n🔍 Estado del clúster (namespace: $NAMESPACE):"
+echo -e "\n📋 Estado general del entorno (namespace: $NS_K8S):"
 
-echo -e "\n📦 Pods:"
+echo -e "\n🧱 Pods:"
 kubectl get pods
 
-echo -e "\n🌐 Services:"
+echo -e "\n🌐 Servicios:"
 kubectl get svc
 
-echo -e "\n💾 Persistent Volumes:"
+echo -e "\n💽 Volúmenes Persistentes:"
 kubectl get pv
 
-echo -e "\n📦 Persistent Volume Claims:"
+echo -e "\n📦 Claims de Volumen:"
 kubectl get pvc
 
-echo -e "\n🌐 Abriendo el sitio en el navegador..."
-minikube service "$SERVICE_NAME" -p "$PROFILE" -n "$NAMESPACE"
+echo -e "\n🌐 Abriendo el servicio en el navegador..."
+minikube service "$SERVICIO_WEB" -p "$PERFIL_MINIKUBE" -n "$NS_K8S"
+
+echo -e "\n🟢 El entorno de despliegue ya estaba configurado. No se detectaron cambios nuevos."

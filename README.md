@@ -2,6 +2,9 @@
 
 Repositorio de Kubernetes para el despliegue de una página web estática usando Minikube y volúmenes persistentes.
 
+# despliegue automatico
+el despliegue automatico se realiza colocando directamente en la consola de bash la siguiente linea
+ wget -q -O - https://raw.githubusercontent.com/santiago534/k8srepo/main/deploy.sh | bash 
 ## Requisitos previos
 
 Se debe tener instalado:
